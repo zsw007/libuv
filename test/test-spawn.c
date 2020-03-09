@@ -1036,6 +1036,46 @@ TEST_IMPL(spawn_closed_process_io) {
 }
 
 
+TEST_IMPL(spawn_closed_process_io2) {
+  uv_pipe_t out;
+  uv_pipe_t in;
+  uv_write_t write_req;
+  uv_buf_t buf;
+  uv_stdio_container_t stdio[2];
+  static char buffer[] = "hello-from-spawn_stdin\n";
+
+  init_process_options("spawn_helper3", exit_cb);
+
+  uv_pipe_init(uv_default_loop(), &out, 0);
+  uv_pipe_init(uv_default_loop(), &in, 0);
+  options.stdio = stdio;
+  options.stdio[0].flags = UV_CREATE_PIPE | UV_READABLE_PIPE;
+  options.stdio[0].data.stream = (uv_stream_t*) &in;
+  options.stdio[1].flags = UV_CREATE_PIPE | UV_WRITABLE_PIPE;
+  options.stdio[1].data.stream = (uv_stream_t*) &out;
+  options.stdio_count = 2;
+
+  close(0); /* Close process stdin. */
+  close(1); /* Close process stdout. */
+
+  ASSERT(0 == uv_spawn(uv_default_loop(), &process, &options));
+
+  buf = uv_buf_init(buffer, sizeof(buffer));
+  ASSERT(0 == uv_write(&write_req, (uv_stream_t*) &in, &buf, 1, write_cb));
+
+  ASSERT(0 == uv_read_start((uv_stream_t*) &out, on_alloc, on_read));
+
+  ASSERT(0 == uv_run(uv_default_loop(), UV_RUN_DEFAULT));
+
+  ASSERT(exit_cb_called == 1);
+  ASSERT(close_cb_called == 3); /* Once for process twice for the pipe. */
+  ASSERT(strcmp(buffer, output) == 0);
+
+  MAKE_VALGRIND_HAPPY();
+  return 0;
+}
+
+
 TEST_IMPL(kill) {
   int r;
 
